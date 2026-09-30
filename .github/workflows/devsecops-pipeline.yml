@@ -1,0 +1,60 @@
+name: DevSecOps CI Pipeline
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  security_checks:
+    name: Automated Security Testing & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Gate 1: Secrets Scanning
+      - name: Gate 1 - Gitleaks Secret Audit
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      # Setup Runtime
+      - name: Set up Node.js Environment
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      # Gate 2: Dependency / SCA Scanning
+      - name: Gate 2 - SCA Dependency Audit (npm audit)
+        run: |
+          npm audit --audit-level=high || true
+
+      # Gate 3: Static Application Security Testing (SAST)
+      - name: Gate 3 - Semgrep Code Audit
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/owasp-top-ten
+        continue-on-error: true
+
+      # Build Docker Artifact
+      - name: Build Application Container Image
+        run: |
+          docker build -t nodegoat-app:latest .
+
+      # Gate 4: Container Security Scanning (Build Blocker)
+      - name: Gate 4 - Trivy Container Vulnerability Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'nodegoat-app:latest'
+          format: 'table'
+          exit-code: '1' # Critical ගැටලු හමු වූ විට build එක අසාර්ථක (fail) කරයි
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
