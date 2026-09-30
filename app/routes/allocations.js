@@ -9,21 +9,22 @@ function AllocationsHandler(db) {
     const allocationsDAO = new AllocationsDAO(db);
 
     this.displayAllocations = (req, res, next) => {
-        /*
-        // Fix for A4 Insecure DOR -  take user id from session instead of from URL param
-        const { userId } = req.session;
-        */
-        const {
-            userId
-        } = req.params;
-        const {
-            threshold
-        } = req.query;
+        // DEFENSIVE REMEDIATION: Session-Bound Authorization Guard
+        // Extract authenticated userId strictly from session
+        const sessionUserId = req.session && req.session.userId;
+        const paramUserId = req.params.userId;
+        const { threshold } = req.query;
 
-        allocationsDAO.getByUserIdAndThreshold(userId, threshold, (err, allocations) => {
+        // Prevent unauthorized access if parameter does not match the active session
+        if (!sessionUserId || (paramUserId && String(sessionUserId) !== String(paramUserId))) {
+            return res.status(403).send("Forbidden: Unauthorized access to requested resource.");
+        }
+
+        // Strictly query using session-bound identifier
+        allocationsDAO.getByUserIdAndThreshold(sessionUserId, threshold, (err, allocations) => {
             if (err) return next(err);
             return res.render("allocations", {
-                userId,
+                userId: sessionUserId,
                 allocations,
                 environmentalScripts
             });
